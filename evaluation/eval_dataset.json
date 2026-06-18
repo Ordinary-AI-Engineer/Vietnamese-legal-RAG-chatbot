@@ -1,0 +1,92 @@
+[
+  {
+    "question": "Điều 198 Bộ luật hình sự quy định tội gì?",
+    "ground_truth": "Tội lừa dối khách hàng",
+    "relevant_sources": ["5.5. Bộ luật hình sự.pdf"],
+    "relevant_articles": ["Điều 198"]
+  },
+  {
+    "question": "Tội lừa dối khách hàng bị phạt tù tối đa bao nhiêu năm?",
+    "ground_truth": "Phạt tù từ 01 năm đến 05 năm",
+    "relevant_sources": ["5.5. Bộ luật hình sự.pdf"],
+    "relevant_articles": ["Điều 198"]
+  },
+  {
+    "question": "Điều 192 Bộ luật hình sự quy định về tội gì?",
+    "ground_truth": "Tội sản xuất, buôn bán hàng giả",
+    "relevant_sources": ["5.5. Bộ luật hình sự.pdf"],
+    "relevant_articles": ["Điều 192"]
+  },
+  {
+    "question": "Quyền tự bảo vệ trong Luật Sở hữu trí tuệ được quy định tại điều nào?",
+    "ground_truth": "Điều 198 Luật Sở hữu trí tuệ",
+    "relevant_sources": ["5.1. Luat So huu tri tue 2005.pdf"],
+    "relevant_articles": ["Điều 198"]
+  },
+  {
+    "question": "Những người không được tham gia đấu giá theo Luật Thương mại gồm những ai?",
+    "ground_truth": "Người không có năng lực hành vi dân sự, người làm việc trong tổ chức bán đấu giá, người trực tiếp thực hiện việc giám định",
+    "relevant_sources": ["5.11. Luat Thuong mai 2005.pdf"],
+    "relevant_articles": ["Điều 198"]
+  },
+  {
+    "question": "Điều 200 Bộ luật hình sự quy định về tội trốn thuế như thế nào?",
+    "ground_truth": "Tội trốn thuế với các hành vi như khai sai, bỏ sót doanh thu",
+    "relevant_sources": ["5.5. Bộ luật hình sự.pdf"],
+    "relevant_articles": ["Điều 200"]
+  },
+  {
+    "question": "Tập trung kinh tế bị cấm được quy định trong Luật Cạnh tranh như thế nào?",
+    "ground_truth": "Tập trung kinh tế bị cấm khi gây tác động hạn chế cạnh tranh đáng kể",
+    "relevant_sources": ["5.10. LUAT CANH TRANH.pdf"],
+    "relevant_articles": ["Điều 42"]
+  },
+  {
+    "question": "Biên bản vi phạm hành chính cần có những nội dung gì?",
+    "ground_truth": "Ngày tháng năm lập biên bản, thông tin người vi phạm, hành vi vi phạm, căn cứ pháp lý",
+    "relevant_sources": ["5.7. Luật xử lý vi phạm hành chính.pdf"],
+    "relevant_articles": ["Điều 58"]
+  },
+  {
+    "question": "Thủ tục hòa giải trong Bộ luật tố tụng dân sự được quy định thế nào?",
+    "ground_truth": "Tòa án tiến hành hòa giải để các đương sự thỏa thuận với nhau về việc giải quyết vụ án",
+    "relevant_sources": ["5.4 Bộ Luật tố tụng dân sự.pdf"],
+    "relevant_articles": ["Điều 210", "Điều 211"]
+  },
+  {
+    "question": "Điều 74 Bộ luật hình sự quy định gì về pháp nhân thương mại?",
+    "ground_truth": "Áp dụng quy định của Bộ luật hình sự đối với pháp nhân thương mại phạm tội",
+    "relevant_sources": ["5.5. Bộ luật hình sự.pdf"],
+    "relevant_articles": ["Điều 74"]
+  },
+  {
+    "question": "Người dưới 18 tuổi phạm tội được xử lý như thế nào theo Bộ luật tố tụng hình sự?",
+    "ground_truth": "Áp dụng thủ tục tố tụng đặc biệt, ưu tiên giáo dục, phòng ngừa",
+    "relevant_sources": ["5.3 Bộ Luật tố tụng hình sự.pdf"],
+    "relevant_articles": ["Điều 414", "Điều 415"]
+  },
+  {
+    "question": "Luật Hải quan quy định gì về kiểm tra hải quan?",
+    "ground_truth": "Kiểm tra hàng hóa xuất nhập khẩu, phương tiện vận tải, hồ sơ hải quan",
+    "relevant_sources": ["5.8. Luật Hải quan.pdf"],
+    "relevant_articles": []
+  },
+  {
+    "question": "Điều 90 Bộ luật hình sự quy định về đối tượng nào?",
+    "ground_truth": "Người dưới 18 tuổi phạm tội",
+    "relevant_sources": ["5.5. Bộ luật hình sự.pdf"],
+    "relevant_articles": ["Điều 90"]
+  },
+  {
+    "question": "Xóa án tích đối với người dưới 18 tuổi theo Bộ luật tố tụng hình sự?",
+    "ground_truth": "Thực hiện theo Điều 107 Bộ luật hình sự khi có đủ điều kiện",
+    "relevant_sources": ["5.3 Bộ Luật tố tụng hình sự.pdf"],
+    "relevant_articles": ["Điều 425"]
+  },
+  {
+    "question": "Quyết định xử phạt vi phạm hành chính phải có những nội dung bắt buộc nào?",
+    "ground_truth": "Địa danh ngày tháng năm, căn cứ pháp lý, biên bản vi phạm, nội dung quyết định xử phạt",
+    "relevant_sources": ["5.7. Luật xử lý vi phạm hành chính.pdf"],
+    "relevant_articles": ["Điều 68"]
+  }
+]

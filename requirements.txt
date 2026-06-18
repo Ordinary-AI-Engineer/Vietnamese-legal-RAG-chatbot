@@ -1,0 +1,28 @@
+# ── Core Framework ─────────────────────────────────────────────
+langchain==0.1.16
+langchain-community==0.0.34
+langchain-core==0.1.45
+
+# ── Vector Database ─────────────────────────────────────────────
+qdrant-client==1.8.2
+fastembed==0.2.6
+
+# ── Ingestion & Parsing ─────────────────────────────────────────
+pypdf==4.2.0             # PDF parsing
+tiktoken==0.6.0          # Tokenizer
+
+# ── Hybrid Search ───────────────────────────────────────────────
+rank_bm25==0.2.2         # BM25 keyword search
+
+# ── Reranking (optional — off by default for Vietnamese) ────────
+sentence-transformers>=2.6.0   # CrossEncoderReranker (BAAI/bge-reranker-base)
+
+# ── Backend API (Production) ────────────────────────────────────
+fastapi==0.110.1
+uvicorn[standard]==0.29.0      # [standard] = websocket + reload support
+python-multipart>=0.0.9        # Form/file upload support
+
+# ── Utils & Config ──────────────────────────────────────────────
+PyYAML==6.0.1
+python-dotenv==1.0.1
+requests==2.31.0

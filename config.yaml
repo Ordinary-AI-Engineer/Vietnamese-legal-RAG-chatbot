@@ -1,0 +1,27 @@
+system:
+ device:"mps"
+llm:
+ provider: "ollama"
+ base_url: "http://localhost:11434"
+ model_name: "qwen2.5:3b"
+ temperature: 0.1
+ max_tokens: 2048
+ context_window: 4096
+embeddings:
+ provider: "fastembed"
+ model_name: "intfloat/multilingual-e5-large"  # ✅ 1024 chiều, đa ngôn ngữ (kể cả Tiếng Việt), có trong FastEmbed
+ # Thứ tự ưu tiên: multilingual-e5-large > mpnet-base-v2 (768) > MiniLM-L12-v2 (384, cũ)
+ # LƯU Ý: Khi đổi model, bắt buộc phải chạy: python reindex.py
+vector_store:
+ provider: "qdrant"
+ collection_name: "law_database"
+ host: "localhost"
+ port: 6333
+retrieval:
+ top_k: 10            # Số kết quả cuối trả về sau RRF
+ candidate_pool: 50   # Số candidates mỗi luồng (Vector + BM25) tìm trước khi gộp
+chunking:
+ chunk_size: 400
+ chunk_overlap: 50 
+
+

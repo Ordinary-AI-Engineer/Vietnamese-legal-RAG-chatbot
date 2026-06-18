@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  # ── Qdrant Vector Database ─────────────────────────
+  qdrant:
+    image: qdrant/qdrant:v1.9.2
+    container_name: qdrant_server
+    ports:
+      - "6333:6333"   # REST API
+      - "6334:6334"   # gRPC
+    volumes:
+      - ./qdrant_data:/qdrant/storage
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── Legal AI API ────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: legal_api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - ./data:/app/data:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+    depends_on:
+      qdrant:
+        condition: service_healthy
+    restart: unless-stopped
+    # Ollama chạy trên máy host → dùng host.docker.internal
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+networks:
+  default:
+    name: legalai_net

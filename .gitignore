@@ -1,0 +1,35 @@
+# ── Python ────────────────────────────────────────────────────
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# ── Data & Models (too large for GitHub) ──────────────────────
+data/raw/*.pdf
+data/processed/
+qdrant_data/
+*.bin
+*.safetensors
+
+# ── Environment / Secrets ─────────────────────────────────────
+.env
+.env.local
+*.env
+
+# ── Node / Next.js ────────────────────────────────────────────
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+
+# ── OS ────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── IDE ───────────────────────────────────────────────────────
+.vscode/settings.json
+.idea/
+
+# ── Logs ──────────────────────────────────────────────────────
+*.log
+logs/
