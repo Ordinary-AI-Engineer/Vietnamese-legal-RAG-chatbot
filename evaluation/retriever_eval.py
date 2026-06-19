@@ -21,7 +21,7 @@ from typing import List, Dict
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
 
-from src.retrival.retriever import LawRetriever
+from src.retrieval.retriever import LawRetriever
 from langchain_core.documents import Document
 
 
@@ -111,7 +111,7 @@ def run_retriever_eval(
     # Khởi tạo retriever
     reranker = None
     if use_reranker:
-        from src.retrival.reranker import CrossEncoderReranker
+        from src.retrieval.reranker import CrossEncoderReranker
         reranker = CrossEncoderReranker(model_name="BAAI/bge-reranker-base", top_k=5)
 
     retriever = LawRetriever(config_path=config_path, reranker=reranker)

@@ -63,9 +63,24 @@ ChatBotLawFinal/
 ├── app/
 │   ├── main.py                  # FastAPI server (eager init, thread-safe lock)
 │   └── static/
-│       └── index.html           # Web UI — pure HTML/CSS/JS, no framework
+│       └── index.html           # Fallback Web UI — pure HTML/CSS/JS
+├── frontend/                    # Next.js 16 frontend (primary UI)
+│   ├── src/
+│   │   ├── app/
+│   │   │   ├── layout.tsx       # Root layout + metadata + Vietnamese font
+│   │   │   ├── page.tsx         # Main chat page with session management
+│   │   │   └── globals.css      # Vietnamese legal color theme
+│   │   ├── components/
+│   │   │   ├── Sidebar.tsx      # Nav + chat history + model status
+│   │   │   ├── MessageBubble.tsx# User/AI message with citation tags
+│   │   │   └── TypingIndicator.tsx
+│   │   ├── lib/
+│   │   │   └── api.ts           # FastAPI client + citation extractor
+│   │   └── types/
+│   │       └── index.ts         # TypeScript interfaces
+│   └── .env.local               # NEXT_PUBLIC_API_URL=http://localhost:8000
 ├── src/
-│   ├── retrival/
+│   ├── retrieval/               # ← fixed (was: retrival)
 │   │   ├── retriever.py         # LawRetriever — 3-stream Hybrid RRF
 │   │   └── reranker.py          # CrossEncoderReranker (optional)
 │   ├── llm/
@@ -76,14 +91,19 @@ ChatBotLawFinal/
 │   │   └── chunker.py           # PDF → article-level chunks with metadata
 │   ├── ingestion/
 │   │   └── loader.py            # PDF document loader
-│   └── vectordb/
-│       └── vector_store.py      # Qdrant client wrapper
+│   ├── vectordb/
+│   │   └── vector_store.py      # Qdrant client wrapper (VectorDBManager)
+│   └── embeddings/
+│       └── embedder.py          # Embedding utilities
 ├── evaluation/
 │   ├── eval_dataset.json        # 15 ground-truth Q&A pairs
 │   ├── retriever_eval.py        # MRR@10, Recall@5, Precision@5 metrics
 │   └── run_eval.py              # CI gate — exits with code 1 on failure
 ├── data/
-│   └── raw/                     # Vietnamese legal PDF documents
+│   └── raw/                     # Vietnamese legal PDF documents (not tracked)
+├── docs/
+│   └── screenshots/
+│       └── demo.png             # UI screenshot for portfolio
 ├── reindex.py                   # Full corpus re-ingestion to Qdrant
 ├── docker-compose.yml           # Qdrant + API services
 ├── Dockerfile

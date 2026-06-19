@@ -11,9 +11,9 @@ project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(_
 if project_root not in sys.path:
     sys.path.append(project_root)
 
-# ✅ FIX 1: Import đúng tên thư mục "retrival" (không có 'e')
-from src.retrival.retriever import LawRetriever
-from src.retrival.reranker import CrossEncoderReranker
+# Import retriever and reranker from retrieval module
+from src.retrieval.retriever import LawRetriever
+from src.retrieval.reranker import CrossEncoderReranker
 # ✅ FIX 3 & 4: Dùng format_docs đã có sẵn, không viết lại
 from src.prompts.prompt_templates import LEGAL_QA_PROMPT, format_docs
 
