@@ -268,14 +268,31 @@ python evaluation/run_eval.py --mode e2e
 ## Configuration (`config.yaml`)
 
 ```yaml
+system:
+  device: "mps"              # Hỗ trợ tăng tốc GPU trên Mac (Apple Silicon), hoặc "cuda"/"cpu"
+  
 llm:
-  model_name: qwen2.5:3b     # swap to llama3.2:3b, phi3:mini, etc.
-  base_url: http://localhost:11434
+  provider: "ollama"
+  model_name: "qwen2.5:3b"   # swap to llama3.2:3b, phi3:mini, vv.
+  base_url: "http://localhost:11434"
 
-vector_db:
-  url: http://localhost:6333
-  collection_name: law_database
-  embedding_model: intfloat/multilingual-e5-large
+embeddings:
+  provider: "fastembed"
+  model_name: "intfloat/multilingual-e5-large"
+
+vector_store:
+  provider: "qdrant"
+  host: "localhost"
+  port: 6333
+  collection_name: "law_database"
+  
+# Advanced RAG parameters
+auto_merging:
+  enabled: true
+  merge_threshold: 2
+
+compression:
+  enabled: true
 ```
 
 ---
