@@ -20,8 +20,25 @@ vector_store:
 retrieval:
  top_k: 10            # Số kết quả cuối trả về sau RRF
  candidate_pool: 50   # Số candidates mỗi luồng (Vector + BM25) tìm trước khi gộp
+ multi_query:
+  enabled: false      # TẮT: Reranker-v2 đã cover recall → MultiQuery không cần thiết
+  num_variants: 3     # (dùng khi bật lại)
 chunking:
  chunk_size: 400
- chunk_overlap: 50 
+ chunk_overlap: 50
+auto_merging:
+ enabled: true
+ merge_threshold: 2   # Nếu ≥ N chunks từ cùng 1 điều → trả về toàn bộ điều đó
+compression:
+ enabled: true
+ max_docs: 5          # Chỉ compress top N docs (tránh tốn quá nhiều LLM calls)
+ min_length: 40       # Nếu extract ngắn hơn N chars → fallback giữ doc gốc
+iter_retgen:
+ enabled: false       # TẮT: quá chậm (~60s/câu), không tăng MRR khi đã có Reranker
+ max_iterations: 2    # (dùng khi bật lại, không có Reranker)
+
+
+
+
 
 

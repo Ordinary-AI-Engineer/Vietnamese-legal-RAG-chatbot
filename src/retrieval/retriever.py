@@ -1,12 +1,13 @@
 import yaml
 import os
 import re
-from typing import List
+from typing import List, Tuple
 from langchain_core.documents import Document
 from langchain_community.vectorstores import Qdrant
 import qdrant_client
 
 from langchain_community.retrievers import BM25Retriever
+from langchain_community.llms import Ollama
 
 def custom_bm25_preprocess(text: str) -> List[str]:
     """
@@ -96,6 +97,16 @@ class LawRetriever:
         retrieval_cfg = self.config.get('retrieval', {})
         self.top_k = retrieval_cfg.get('top_k', 10)
         self.candidate_pool = retrieval_cfg.get('candidate_pool', 50)
+
+        # Multi-Query Expansion config
+        mq_cfg = retrieval_cfg.get('multi_query', {})
+        self.multi_query_enabled = mq_cfg.get('enabled', False)
+        self.num_variants = mq_cfg.get('num_variants', 3)
+
+        # Auto Merging config
+        am_cfg = self.config.get('auto_merging', {})
+        self.auto_merging_enabled = am_cfg.get('enabled', False)
+        self.merge_threshold = am_cfg.get('merge_threshold', 2)
         
         import sys
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -115,59 +126,181 @@ class LawRetriever:
         self.qdrant_retriever = self.vector_store.as_retriever(search_kwargs={"k": self.candidate_pool})
         print(f"🔌 Đã kết nối Qdrant (Vector Search).")
 
-        self.bm25_retriever = self._build_bm25_retriever()
-        # Optional cross-encoder reranker (None = dùng RRF score thuần túy)
+        self.bm25_retriever, self.parent_map = self._build_bm25_and_parent_map()
+
+        # LLM nhỏ cho Multi-Query Expansion (dùng chung Ollama)
+        llm_cfg  = self.config.get('llm', {})
+        self.llm = Ollama(
+            model=llm_cfg.get('model_name', 'qwen2.5:3b'),
+            base_url=llm_cfg.get('base_url', 'http://localhost:11434'),
+            temperature=0.3,
+        )
+
+        # Optional cross-encoder reranker
         self.reranker = reranker
         if reranker:
             print(f"🎯 Cross-encoder Reranker đã được kích hoạt.")
+        if self.multi_query_enabled:
+            print(f"🔀 Multi-Query Expansion: BẬT ({self.num_variants} variants)")
+        if self.auto_merging_enabled:
+            print(f"🔗 Auto Merging Retriever: BẬT (threshold={self.merge_threshold} chunks/điều)")
         print(f"🔎 Đã khởi động HỆ THỐNG HYBRID SEARCH (Tự động gộp điểm RRF).")
 
-    def _build_bm25_retriever(self) -> BM25Retriever:
-        print("⚙️ Đang tải văn bản từ Qdrant để lập chỉ mục từ khóa BM25...")
-        
+    def _build_bm25_and_parent_map(self):
+        """
+        Scroll Qdrant một lần duy nhất → xây dựng cả:
+        - BM25Retriever (tìm kiếm từ khóa)
+        - parent_map: {parent_id → Document} dùng cho Auto Merging
+        """
+        print("⚙️ Đang tải corpus từ Qdrant (BM25 index + Parent Map)...")
+
         scroll_result, _ = self.client.scroll(
             collection_name=self.collection_name,
             limit=10000,
             with_payload=True,
             with_vectors=False
         )
-        
-        docs = []
+
+        bm25_docs  = []   # docs cho BM25 (enhanced content)
+        parent_groups: dict = {}  # {parent_id: {chunks, metadata}}
+
         for record in scroll_result:
             content = record.payload.get("page_content", "")
-            meta = record.payload.get("metadata", {})
-            if content:
-                source_file = os.path.basename(meta.get('source', ''))
-                clean_source = re.sub(r'^[\d\.]+\s*', '', source_file).replace('.pdf', '')
-                chapter = meta.get('chapter', '')
-                article = meta.get('article', '')
-                
-                enhanced_content = f"{clean_source} {chapter} {article} {content}"
-                # ✅ FIX Vấn đề 4: Lưu nội dung GỐC vào metadata để dedup sau này
-                # tránh phụ thuộc vào strip prefix fragile
-                meta_with_original = dict(meta)
-                meta_with_original['_original_content'] = content
-                docs.append(Document(page_content=enhanced_content, metadata=meta_with_original))
-                
-        print(f"   Đã nạp {len(docs)} đoạn văn bản vào bộ nhớ BM25.")
-        
-        bm25_retriever = BM25Retriever.from_documents(docs, preprocess_func=custom_bm25_preprocess)
-        bm25_retriever.k = self.candidate_pool
-        return bm25_retriever
+            meta    = record.payload.get("metadata", {})
+            if not content:
+                continue
 
-    def get_relevant_laws(self, query: str) -> List[Document]:
-        print(f"\n🧠 Đang phân tích câu hỏi: '{query}'...")
-        
-        # ✅ Bước 0: Phát hiện ý định (luật cụ thể + số điều)
-        source_prefix, article_number = _detect_intent(query)
-        if source_prefix:
-            print(f"   🎯 Đã phát hiện: file prefix='{source_prefix}', điều='{article_number}'")
-        
-        # 1. Chạy 2 luồng tìm kiếm chính
+            source  = meta.get('source', '')
+            chapter = meta.get('chapter', '')
+            article = meta.get('article', '')
+
+            # ── BM25 doc ──────────────────────────────────────
+            source_file   = os.path.basename(source)
+            clean_source  = re.sub(r'^[\d\.]+\s*', '', source_file).replace('.pdf', '')
+            enhanced      = f"{clean_source} {chapter} {article} {content}"
+            meta_bm25     = dict(meta)
+            meta_bm25['_original_content'] = content
+            bm25_docs.append(Document(page_content=enhanced, metadata=meta_bm25))
+
+            # ── Parent Map ────────────────────────────────────
+            # Group key = (source, article) — mỗi điều luật là 1 parent
+            parent_id = f"{source}|{article}"
+            if parent_id not in parent_groups:
+                parent_groups[parent_id] = {
+                    'chunks': [],
+                    'metadata': {
+                        'source': source,
+                        'chapter': chapter,
+                        'article': article,
+                        'chunk_level': 'parent',
+                    }
+                }
+            parent_groups[parent_id]['chunks'].append(content)
+
+        print(f"   Đã nạp {len(bm25_docs)} chunks vào BM25.")
+        print(f"   Đã xây dựng {len(parent_groups)} parent nodes (điều luật).")
+
+        # Build BM25 retriever
+        bm25_retriever = BM25Retriever.from_documents(
+            bm25_docs, preprocess_func=custom_bm25_preprocess
+        )
+        bm25_retriever.k = self.candidate_pool
+
+        # Build parent_map: merge chunks của cùng điều thành 1 Document lớn
+        parent_map = {}
+        for parent_id, data in parent_groups.items():
+            merged_content = '\n\n'.join(data['chunks'])
+            parent_map[parent_id] = Document(
+                page_content=merged_content,
+                metadata=data['metadata']
+            )
+
+        return bm25_retriever, parent_map
+
+    def _auto_merge(self, docs: List[Document]) -> List[Document]:
+        """
+        Auto Merging Retriever:
+        Nếu ≥ merge_threshold chunks từ cùng 1 điều luật được retrieve
+        → thay tất cả bằng 1 Document cha (toàn bộ điều đó).
+        Ngược lại → giữ nguyên chunks lẻ.
+        """
+        # Đếm số chunks/điều trong kết quả
+        parent_hit: dict = {}   # parent_id → count
+        child_groups: dict = {} # parent_id → [docs]
+        orphan_docs = []        # chunks không có article metadata
+
+        for doc in docs:
+            source  = doc.metadata.get('source', '')
+            article = doc.metadata.get('article', '')
+            if not article:
+                orphan_docs.append(doc)
+                continue
+            pid = f"{source}|{article}"
+            parent_hit[pid]  = parent_hit.get(pid, 0) + 1
+            child_groups.setdefault(pid, []).append(doc)
+
+        result = []
+        merged_pids = set()
+
+        for pid, count in parent_hit.items():
+            if count >= self.merge_threshold and pid in self.parent_map:
+                # ✅ Merge: trả về toàn bộ điều luật
+                parent_doc = self.parent_map[pid]
+                result.append(parent_doc)
+                merged_pids.add(pid)
+                art_label = pid.split('|')[-1] or pid
+                print(f"   🔗 Auto Merge: {count} chunks → parent [{art_label[:50]}]")
+            else:
+                # Giữ nguyên chunks lẻ
+                result.extend(child_groups[pid])
+
+        result.extend(orphan_docs)
+        merged_count = len(merged_pids)
+        if merged_count:
+            print(f"   📦 Merged {merged_count} articles → context đầy đủ hơn")
+        return result
+
+    def _expand_query(self, query: str) -> List[str]:
+        """
+        Multi-Query Expansion: dùng LLM tạo ra {num_variants} cách hỏi khác nhau
+        cho cùng một câu hỏi pháp lý. Fallback về [query] nếu LLM thất bại.
+        """
+        prompt = (
+            f"Bạn là trợ lý pháp lý Việt Nam. "
+            f"Hãy viết {self.num_variants} cách diễn đạt KHÁC NHAU cho câu hỏi dưới đây.\n"
+            f"Yêu cầu:\n"
+            f"- Mỗi cách trên một dòng, bắt đầu bằng số thứ tự (1. 2. 3.)\n"
+            f"- Giữ nguyên ý nghĩa pháp lý cốt lõi\n"
+            f"- Dùng ngôn từ khác nhau (trích dẫn điều luật, hành vi, hậu quả pháp lý...)\n"
+            f"- KHÔNG giải thích, KHÔNG thêm câu dẫn\n\n"
+            f"Câu hỏi gốc: {query}\n\n"
+            f"{self.num_variants} cách diễn đạt khác:"
+        )
+        try:
+            raw = self.llm.invoke(prompt)
+            variants = []
+            for line in raw.strip().split('\n'):
+                cleaned = re.sub(r'^\d+[\.)\-]\s*', '', line.strip())
+                if cleaned and len(cleaned) > 8 and cleaned.lower() != query.lower():
+                    variants.append(cleaned)
+            result = [query] + variants[:self.num_variants]
+            print(f"   🔀 Multi-Query: {len(result)} queries ({len(result)-1} variants)")
+            for i, q in enumerate(result):
+                label = 'ORIGINAL' if i == 0 else f'variant {i}'
+                print(f"      [{label}] {q}")
+            return result
+        except Exception as e:
+            print(f"   ⚠️ Multi-query expansion failed, using original only: {e}")
+            return [query]
+
+    def _retrieve_single(self, query: str, source_prefix: str | None, article_number: str | None) -> Tuple[List[Document], List[Document], List[Document]]:
+        """
+        Chạy 3 luồng retrieval (Vector + BM25 + Targeted) cho một query đơn lẻ.
+        Trả về (qdrant_docs, bm25_docs, targeted_docs).
+        """
         qdrant_docs = self.qdrant_retriever.invoke(query)
         bm25_docs   = self.bm25_retriever.invoke(query)
-        
-        # 2. Luồng thứ 3 (Targeted): chỉ chạy khi phát hiện luật cụ thể
+
         targeted_docs = []
         if source_prefix:
             from qdrant_client.models import Filter, FieldCondition, MatchText
@@ -182,24 +315,38 @@ class LawRetriever:
             )
             try:
                 targeted_docs = targeted_retriever.invoke(query)
-                print(f"   📌 Targeted Search: tìm được {len(targeted_docs)} chunks từ luật chỉ định.")
+                print(f"   📌 Targeted Search ({query[:30]}...): {len(targeted_docs)} chunks")
             except Exception as e:
-                print(f"   ⚠️  Targeted Search thất bại (bỏ qua): {e}")
+                print(f"   ⚠️  Targeted Search thất bại: {e}")
 
-        # 3. RRF: hằng số k — càng nhỏ → càng ưu tiên
-        K_TARGETED = 10   # ưu tiên cao nhất (có filter đúng luật)
-        K_BM25     = 30   # ưu tiên từ khóa
-        K_VECTOR   = 60   # ngữ nghĩa
+        return qdrant_docs, bm25_docs, targeted_docs
 
-        rrf_scores = {}
-        doc_map    = {}
+    def get_relevant_laws(self, query: str) -> List[Document]:
+        print(f"\n🧠 Đang phân tích câu hỏi: '{query}'...")
+
+        # Bước 0: Phát hiện ý định (tên luật + số điều)
+        source_prefix, article_number = _detect_intent(query)
+        if source_prefix:
+            print(f"   🎯 Đã phát hiện: file prefix='{source_prefix}', điều='{article_number}'")
+
+        # Bước 1: Multi-Query Expansion (nếu bật)
+        queries = self._expand_query(query) if self.multi_query_enabled else [query]
+
+        # RRF constants — càng nhỏ → càng ưu tiên
+        K_TARGETED  = 10   # filter đúng luật  → cao nhất
+        K_BM25_ORIG = 30   # BM25 câu gốc
+        K_VEC_ORIG  = 60   # Vector câu gốc
+        K_BM25_VAR  = 50   # BM25 variant     → thấp hơn câu gốc
+        K_VEC_VAR   = 80   # Vector variant
+
+        rrf_scores: dict = {}
+        doc_map:    dict = {}
 
         def get_doc_id(doc, is_bm25=False):
-            """Dùng hash nội dung gốc — không bao giờ collision."""
+            """Hash nội dung gốc để dedup chính xác qua nhiều queries."""
             src  = doc.metadata.get('source', '')
             chap = doc.metadata.get('chapter', '')
             art  = doc.metadata.get('article', '')
-
             if is_bm25:
                 original = doc.metadata.get('_original_content')
                 if original is not None:
@@ -209,50 +356,57 @@ class LawRetriever:
                     content = doc.page_content
             else:
                 content = doc.page_content
-
             return f"{src}|{chap}|{art}|{hash(content)}"
 
-        # 4. Chấm điểm Targeted Search (cao nhất)
-        for rank, doc in enumerate(targeted_docs):
-            doc_id = get_doc_id(doc)
-            # Bonus: nếu có số điều đúng → bonus thêm
-            art_meta = doc.metadata.get('article', '')
-            article_bonus = 0
-            if article_number and f'{article_number}' in art_meta:
-                article_bonus = 1 / K_TARGETED  # gấp đôi điểm
-            rrf_scores[doc_id] = 1 / (rank + K_TARGETED) + article_bonus
-            doc_map[doc_id] = doc
+        # Bước 2: Chạy retrieval cho từng query, gộp điểm RRF
+        for q_idx, q in enumerate(queries):
+            is_original = (q_idx == 0)
+            k_vec = K_VEC_ORIG if is_original else K_VEC_VAR
+            k_bm  = K_BM25_ORIG if is_original else K_BM25_VAR
 
-        # 5. Chấm điểm Vector Search
-        for rank, doc in enumerate(qdrant_docs):
-            doc_id = get_doc_id(doc, is_bm25=False)
-            score  = 1 / (rank + K_VECTOR)
-            rrf_scores[doc_id] = rrf_scores.get(doc_id, 0) + score
-            if doc_id not in doc_map:
-                doc_map[doc_id] = doc
+            qdrant_docs, bm25_docs, targeted_docs = self._retrieve_single(
+                q, source_prefix if is_original else None, article_number
+            )
 
-        # 6. Chấm điểm BM25
-        for rank, doc in enumerate(bm25_docs):
-            doc_id = get_doc_id(doc, is_bm25=True)
-            score  = 1 / (rank + K_BM25)
-            rrf_scores[doc_id] = rrf_scores.get(doc_id, 0) + score
-            if doc_id not in doc_map:
-                doc_map[doc_id] = doc
+            # Targeted Search (chỉ query gốc vì đã phát hiện luật cụ thể)
+            for rank, doc in enumerate(targeted_docs):
+                doc_id = get_doc_id(doc)
+                art_meta = doc.metadata.get('article', '')
+                article_bonus = (1 / K_TARGETED) if (article_number and f'{article_number}' in art_meta) else 0
+                rrf_scores[doc_id] = rrf_scores.get(doc_id, 0) + 1 / (rank + K_TARGETED) + article_bonus
+                doc_map.setdefault(doc_id, doc)
 
-        # 7. Xếp hạng — lấy Top candidates
+            # Vector Search
+            for rank, doc in enumerate(qdrant_docs):
+                doc_id = get_doc_id(doc)
+                rrf_scores[doc_id] = rrf_scores.get(doc_id, 0) + 1 / (rank + k_vec)
+                doc_map.setdefault(doc_id, doc)
+
+            # BM25
+            for rank, doc in enumerate(bm25_docs):
+                doc_id = get_doc_id(doc, is_bm25=True)
+                rrf_scores[doc_id] = rrf_scores.get(doc_id, 0) + 1 / (rank + k_bm)
+                doc_map.setdefault(doc_id, doc)
+
+        # Bước 3: Xếp hạng theo tổng điểm RRF
         sorted_doc_ids = sorted(rrf_scores.keys(), key=lambda x: rrf_scores[x], reverse=True)
+        print(f"   📊 RRF pool: {len(sorted_doc_ids)} unique docs từ {len(queries)} queries")
 
-        # 8. Cross-encoder Reranking (nếu có reranker)
+        # Bước 4: Cross-encoder Reranking (nếu có)
         if self.reranker:
-            # Lấy Top 20 candidates từ RRF → đưa vào reranker
             rrf_pool = [doc_map[doc_id] for doc_id in sorted_doc_ids[:20]]
             reranked = self.reranker.rerank(query, rrf_pool)
             if reranked:
-                print(f"   ✨ Reranked: {len(rrf_pool)} candidates → Top {len(reranked)}")
-            return reranked
+                print(f"   ✨ Reranked: {len(rrf_pool)} → Top {len(reranked)}")
+            final = reranked or rrf_pool
+        else:
+            final = [doc_map[doc_id] for doc_id in sorted_doc_ids[:self.top_k]]
 
-        # Không có reranker → trả về RRF top_k như cũ
-        return [doc_map[doc_id] for doc_id in sorted_doc_ids[:self.top_k]]
+        # Bước 5: Auto Merging — gộp chunks cùng điều → trả về nguyên điều
+        if self.auto_merging_enabled:
+            final = self._auto_merge(final)
+
+        return final
 
 
 # ==========================================

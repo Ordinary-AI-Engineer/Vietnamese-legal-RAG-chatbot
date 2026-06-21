@@ -11,10 +11,10 @@ project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(_
 if project_root not in sys.path:
     sys.path.append(project_root)
 
-# Import retriever and reranker from retrieval module
+# Import retriever, reranker, compressor
 from src.retrieval.retriever import LawRetriever
 from src.retrieval.reranker import CrossEncoderReranker
-# ✅ FIX 3 & 4: Dùng format_docs đã có sẵn, không viết lại
+from src.retrieval.compressor import LegalContextCompressor
 from src.prompts.prompt_templates import LEGAL_QA_PROMPT, format_docs
 
 
@@ -36,30 +36,47 @@ class LawChatbot:
         # temperature=0.1 → AI nghiêm túc, bớt sáng tạo, phù hợp pháp lý
         self.llm = Ollama(model=llm_model, base_url=llm_url, temperature=0.1)
 
-        # 2. Cross-encoder Reranker (OPTIONAL)
-        # ⚠️ BAAI/bge-reranker-base chủ yếu train trên tiếng Anh/Trung.
-        # Với corpus tiếng Việt, reranker làm GIẢM MRR từ 0.81 → 0.67.
-        # → Để None = dùng RRF thuần (tốt hơn cho tiếng Việt hiện tại).
-        # TODO: Bật lại khi có Vietnamese cross-encoder tốt hơn.
-        reranker = None
-        # reranker = CrossEncoderReranker(
-        #     model_name="BAAI/bge-reranker-base",
-        #     top_k=5
-        # )
+        # 2. Cross-encoder Reranker
+        # ✓ bge-reranker-v2-m3: train trên 100+ ngôn ngữ (kể cả Việt Nam)
+        #   Tốt hơn bge-reranker-base với corpus tiếng Việt.
+        # ⚠️ Lần đầu chạy sẽ download model ~568MB.
+        from src.retrieval.reranker import CrossEncoderReranker
+        reranker = CrossEncoderReranker(
+            model_name="BAAI/bge-reranker-v2-m3",
+            top_k=5
+        )
 
         # 3. Khởi tạo Retriever
         self.retriever = LawRetriever(config_path, reranker=reranker)
 
+        # 4. Contextual Compressor (OPTIONAL)
+        comp_cfg = self.config.get('compression', {})
+        if comp_cfg.get('enabled', False):
+            self.compressor = LegalContextCompressor(config_path)
+        else:
+            self.compressor = None
+            print("🗂️  Contextual Compression: TắT")
 
-        # 3. Lắp ráp chuỗi RAG
-        # ✅ FIX 2: Dùng RunnableLambda để gọi get_relevant_laws() đúng cách
+        # 5. ITER-RETGEN config
+        ir_cfg = self.config.get('iter_retgen', {})
+        self.iter_retgen_enabled = ir_cfg.get('enabled', False)
+        self.max_iterations      = ir_cfg.get('max_iterations', 2)
+
+        # Mini-chain dùng chung cho cả single-pass và iterative
+        self.mini_chain = LEGAL_QA_PROMPT | self.llm | StrOutputParser()
+
+        # 6. Lắp ráp chuỗi RAG (single-pass fallback)
         # Luồng:
-        #   query → get_relevant_laws() → format_docs() → {context}
+        #   query → get_relevant_laws() → [compress] → format_docs() → {context}
         #   query → RunnablePassthrough() → {question}
         #   {context, question} → LEGAL_QA_PROMPT → LLM → StrOutputParser → str
-        retrieve_and_format = RunnableLambda(
-            lambda q: format_docs(self.retriever.get_relevant_laws(q))
-        )
+        def retrieve_compress_format(q: str) -> str:
+            docs = self.retriever.get_relevant_laws(q)
+            if self.compressor:
+                docs = self.compressor.compress(q, docs)
+            return format_docs(docs)
+
+        retrieve_and_format = RunnableLambda(retrieve_compress_format)
 
         self.rag_chain = (
             {
@@ -70,14 +87,73 @@ class LawChatbot:
             | self.llm
             | StrOutputParser()
         )
-        print("✅ HỆ THỐNG RAG ĐÃ SẴN SÀNG NHẬN CÂU HỎI!")
+
+        mode = "ITER-RETGEN" if self.iter_retgen_enabled else "Single-pass"
+        print(f"✅ HỆ THỐNG RAG SẴN SÀNG | Mode: {mode}")
+        if self.iter_retgen_enabled:
+            print(f"   🔄 ITER-RETGEN: {self.max_iterations} vòng lặp retrieve-generate")
+
+    def _ask_iterative(self, question: str) -> str:
+        """
+        ITER-RETGEN: Iterative Retrieval-Generation.
+
+        Vòng 1: retrieve(query) → generate → answer_1
+        Vòng 2: retrieve(query + answer_1) → dedup → generate(all context) → answer_2
+        → Trả về answer cuối cùng (tốt nhất)
+        """
+        seen_hashes: set = set()      # dedup content hash giữa các vòng
+        accumulated_docs: list = []   # tất cả docs dùy từ mọi vòng
+        previous_answer: str = ""
+
+        for iteration in range(self.max_iterations):
+            print(f"\n🔄 ITER-RETGEN Vòng {iteration + 1}/{self.max_iterations}")
+
+            # Xây dựng retrieval query
+            if iteration == 0 or not previous_answer:
+                retrieval_query = question
+            else:
+                # Dùng câu trả lời trước làm gợi ý — cắt ngắn để không làm nhiễu query
+                hint = previous_answer[:250].replace("\n", " ")
+                retrieval_query = f"{question}\n\n[Gợi ý từ vòng trước]: {hint}"
+
+            # Retrieve
+            new_docs = self.retriever.get_relevant_laws(retrieval_query)
+
+            # Deduplicate: chỉ thêm docs thực sự mới
+            added = 0
+            for doc in new_docs:
+                h = hash(doc.page_content[:150])   # hash 150 ky tu dau
+                if h not in seen_hashes:
+                    seen_hashes.add(h)
+                    accumulated_docs.append(doc)
+                    added += 1
+            print(f"   📄 +{added} docs mới | Tổng tích lũy: {len(accumulated_docs)} docs")
+
+            # Chọn top_k từ accumulated
+            docs_to_use = accumulated_docs[:self.retriever.top_k]
+
+            # Compress nếu bật
+            if self.compressor:
+                docs_to_use = self.compressor.compress(question, docs_to_use)
+
+            # Generate
+            context = format_docs(docs_to_use)
+            previous_answer = self.mini_chain.invoke(
+                {"context": context, "question": question}
+            )
+            print(f"   ✍️  Answer_{iteration + 1}: {previous_answer[:80].replace(chr(10), ' ')}...")
+
+        return previous_answer
 
     def ask(self, question: str) -> str:
         """Gửi câu hỏi và nhận câu trả lời từ LLM."""
-        print(f"\n👤 KHÁCH HÀNG HỎI: '{question}'")
+        print(f"\n👤 KHÁCH HÀNG Hỏi: '{question}'")
         print("⏳ Đang lục lọi bộ luật và soạn câu trả lời...")
 
-        response = self.rag_chain.invoke(question)
+        if self.iter_retgen_enabled:
+            response = self._ask_iterative(question)
+        else:
+            response = self.rag_chain.invoke(question)
 
         print("\n" + "=" * 60)
         print("⚖️  LUẬT SƯ AI TRẢ LỜI:")
