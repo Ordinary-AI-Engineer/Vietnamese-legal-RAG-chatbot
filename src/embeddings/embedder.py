@@ -1,6 +1,10 @@
 import yaml
 import os
+import logging
 from langchain_community.embeddings.fastembed import FastEmbedEmbeddings
+
+logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"), format='%(message)s')
+logger = logging.getLogger(__name__)
 
 class TextEmbedder:
     """
@@ -19,14 +23,14 @@ class TextEmbedder:
         provider = self.config['embeddings']['provider']
         model_name = self.config['embeddings']['model_name']
         
-        print(f"⏳ Đang khởi động cỗ máy Embedding: {provider} ({model_name})...")
-        print(f"⚡ Lưu ý: Lần chạy đầu tiên sẽ mất chút thời gian để tải model về máy tính.")
+        logger.info(f"⏳ Đang khởi động cỗ máy Embedding: {provider} ({model_name})...")
+        logger.info(f"⚡ Lưu ý: Lần chạy đầu tiên sẽ mất chút thời gian để tải model về máy tính.")
         
         # Khởi tạo mô hình FastEmbed
         # Thư viện này chạy cực kỳ tối ưu trên kiến trúc Apple Silicon
         self.embedding_model = FastEmbedEmbeddings(model_name=model_name)
         
-        print("✅ Khởi động thành công! Đã sẵn sàng chuyển chữ thành số.")
+        logger.info("✅ Khởi động thành công! Đã sẵn sàng chuyển chữ thành số.")
 
     def get_embedding_model(self):
         """

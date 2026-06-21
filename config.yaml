@@ -1,5 +1,9 @@
 system:
- device:"mps"
+ device: "mps"
+reranker:
+ enabled: true
+ model_name: "BAAI/bge-reranker-v2-m3"
+ top_k: 5
 llm:
  provider: "ollama"
  base_url: "http://localhost:11434"

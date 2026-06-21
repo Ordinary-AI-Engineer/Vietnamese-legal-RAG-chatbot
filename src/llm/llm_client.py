@@ -1,10 +1,14 @@
 import yaml
 import os
 import sys
+import logging
 
 from langchain_community.llms import Ollama
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough, RunnableLambda
+
+logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"), format='%(message)s')
+logger = logging.getLogger(__name__)
 
 # Đảm bảo project root trong sys.path
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -13,7 +17,7 @@ if project_root not in sys.path:
 
 # Import retriever, reranker, compressor
 from src.retrieval.retriever import LawRetriever
-from src.retrieval.reranker import CrossEncoderReranker
+
 from src.retrieval.compressor import LegalContextCompressor
 from src.prompts.prompt_templates import LEGAL_QA_PROMPT, format_docs
 
@@ -32,19 +36,23 @@ class LawChatbot:
         # 1. Khởi tạo LLM (Ollama)
         llm_model = self.config['llm']['model_name']
         llm_url   = self.config['llm']['base_url']
-        print(f"🤖 Đang đánh thức Luật sư AI (Ollama: {llm_model})...")
+        logger.info(f"🤖 Đang đánh thức Luật sư AI (Ollama: {llm_model})...")
         # temperature=0.1 → AI nghiêm túc, bớt sáng tạo, phù hợp pháp lý
         self.llm = Ollama(model=llm_model, base_url=llm_url, temperature=0.1)
 
         # 2. Cross-encoder Reranker
-        # ✓ bge-reranker-v2-m3: train trên 100+ ngôn ngữ (kể cả Việt Nam)
-        #   Tốt hơn bge-reranker-base với corpus tiếng Việt.
-        # ⚠️ Lần đầu chạy sẽ download model ~568MB.
-        from src.retrieval.reranker import CrossEncoderReranker
-        reranker = CrossEncoderReranker(
-            model_name="BAAI/bge-reranker-v2-m3",
-            top_k=5
-        )
+        reranker_cfg = self.config.get('reranker', {})
+        if reranker_cfg.get('enabled', False):
+            from src.retrieval.reranker import CrossEncoderReranker
+            model_name = reranker_cfg.get('model_name', "BAAI/bge-reranker-v2-m3")
+            top_k = reranker_cfg.get('top_k', 5)
+            reranker = CrossEncoderReranker(
+                model_name=model_name,
+                top_k=top_k
+            )
+        else:
+            reranker = None
+
 
         # 3. Khởi tạo Retriever
         self.retriever = LawRetriever(config_path, reranker=reranker)
@@ -55,7 +63,7 @@ class LawChatbot:
             self.compressor = LegalContextCompressor(config_path)
         else:
             self.compressor = None
-            print("🗂️  Contextual Compression: TắT")
+            logger.info("🗂️  Contextual Compression: TắT")
 
         # 5. ITER-RETGEN config
         ir_cfg = self.config.get('iter_retgen', {})
@@ -89,9 +97,9 @@ class LawChatbot:
         )
 
         mode = "ITER-RETGEN" if self.iter_retgen_enabled else "Single-pass"
-        print(f"✅ HỆ THỐNG RAG SẴN SÀNG | Mode: {mode}")
+        logger.info(f"✅ HỆ THỐNG RAG SẴN SÀNG | Mode: {mode}")
         if self.iter_retgen_enabled:
-            print(f"   🔄 ITER-RETGEN: {self.max_iterations} vòng lặp retrieve-generate")
+            logger.info(f"   🔄 ITER-RETGEN: {self.max_iterations} vòng lặp retrieve-generate")
 
     def _ask_iterative(self, question: str) -> str:
         """
@@ -106,7 +114,7 @@ class LawChatbot:
         previous_answer: str = ""
 
         for iteration in range(self.max_iterations):
-            print(f"\n🔄 ITER-RETGEN Vòng {iteration + 1}/{self.max_iterations}")
+            logger.info(f"\n🔄 ITER-RETGEN Vòng {iteration + 1}/{self.max_iterations}")
 
             # Xây dựng retrieval query
             if iteration == 0 or not previous_answer:
@@ -127,7 +135,7 @@ class LawChatbot:
                     seen_hashes.add(h)
                     accumulated_docs.append(doc)
                     added += 1
-            print(f"   📄 +{added} docs mới | Tổng tích lũy: {len(accumulated_docs)} docs")
+            logger.info(f"   📄 +{added} docs mới | Tổng tích lũy: {len(accumulated_docs)} docs")
 
             # Chọn top_k từ accumulated
             docs_to_use = accumulated_docs[:self.retriever.top_k]
@@ -141,25 +149,25 @@ class LawChatbot:
             previous_answer = self.mini_chain.invoke(
                 {"context": context, "question": question}
             )
-            print(f"   ✍️  Answer_{iteration + 1}: {previous_answer[:80].replace(chr(10), ' ')}...")
+            logger.info(f"   ✍️  Answer_{iteration + 1}: {previous_answer[:80].replace(chr(10), ' ')}...")
 
         return previous_answer
 
     def ask(self, question: str) -> str:
         """Gửi câu hỏi và nhận câu trả lời từ LLM."""
-        print(f"\n👤 KHÁCH HÀNG Hỏi: '{question}'")
-        print("⏳ Đang lục lọi bộ luật và soạn câu trả lời...")
+        logger.info(f"\n👤 KHÁCH HÀNG Hỏi: '{question}'")
+        logger.info("⏳ Đang lục lọi bộ luật và soạn câu trả lời...")
 
         if self.iter_retgen_enabled:
             response = self._ask_iterative(question)
         else:
             response = self.rag_chain.invoke(question)
 
-        print("\n" + "=" * 60)
-        print("⚖️  LUẬT SƯ AI TRẢ LỜI:")
-        print("=" * 60)
-        print(response)
-        print("=" * 60)
+        logger.info("\n" + "=" * 60)
+        logger.info("⚖️  LUẬT SƯ AI TRẢ LỜI:")
+        logger.info("=" * 60)
+        logger.info(response)
+        logger.info("=" * 60)
 
         return response
 

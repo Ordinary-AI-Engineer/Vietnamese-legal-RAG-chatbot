@@ -1,9 +1,13 @@
 import yaml
 import os
+import logging
 from typing import List
 from langchain_core.documents import Document
 from langchain_community.vectorstores import Qdrant
 import qdrant_client
+
+logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"), format='%(message)s')
+logger = logging.getLogger(__name__)
 
 class VectorDBManager:
     """
@@ -24,7 +28,7 @@ class VectorDBManager:
         # 2. Khởi tạo Client kết nối tới máy chủ Qdrant đang chạy ngầm
         # ✅ FIX timeout: tăng lên 300s cho collection lớn (mặc định chỉ 5s)
         self.client = qdrant_client.QdrantClient(url=self.url, timeout=300)
-        print(f"🔌 Đã kết nối tới Qdrant tại {self.url}")
+        logger.info(f"🔌 Đã kết nối tới Qdrant tại {self.url}")
 
         # 3. Lấy cỗ máy dịch thuật (Embedder) từ module bên cạnh
         import sys
@@ -35,44 +39,51 @@ class VectorDBManager:
         from src.embeddings.embedder import TextEmbedder
         self.embedder = TextEmbedder(config_path).get_embedding_model()
 
-    def build_database(self, chunks: List[Document], batch_size: int = 100, force_recreate: bool = True):
+    def build_database(self, chunks: List[Document], batch_size: int = 100, force_recreate: bool = False):
         """
         ✨ CƠ CHẾ BATCHING INGESTION (CHUẨN ENTERPRISE)
         Nhận vào toàn bộ chunks, chia thành các mẻ nhỏ để không làm tràn RAM.
         
         Args:
-            force_recreate: Nếu True (mặc định), XÓA collection cũ trước khi tạo mới.
-                            ⚠️ BẮT BUỘC = True khi đổi embedding model (số chiều thay đổi).
+            force_recreate: Nếu True, XÓA collection cũ trước khi tạo mới.
+                            Mặc định False để tránh lỡ tay xóa DB.
+                            ⚠️ BẮT BUỘC = True khi đổi embedding model.
         """
         from qdrant_client.models import Distance, VectorParams
+        import sys
 
         total_chunks = len(chunks)
-        print(f"📦 Đang chuẩn bị nhồi {total_chunks} đoạn văn bản vào Qdrant...")
-        print(f"⚙️ Chế độ an toàn RAM: Xử lý theo mẻ (Batching) - {batch_size} chunks/mẻ.")
+        logger.info(f"📦 Đang chuẩn bị nhồi {total_chunks} đoạn văn bản vào Qdrant...")
+        logger.info(f"⚙️ Chế độ an toàn RAM: Xử lý theo mẻ (Batching) - {batch_size} chunks/mẻ.")
         
         # ✅ FIX ROOT CAUSE: Dùng self.client (timeout=300s) cho MỌI thao tác
         # KHÔNG dùng Qdrant.from_documents() — nó tạo client nội bộ với timeout mặc định 5s
 
         # Bước 1: Xóa collection cũ nếu cần
         if force_recreate:
+            if sys.stdin.isatty() and os.path.basename(sys.argv[0]) in ['reindex.py', 'vector_store.py']:
+                input("⚠️ force_recreate=True — sẽ XÓA TOÀN BỘ collection hiện có, gõ Enter để tiếp tục hoặc Ctrl+C để hủy...")
+            
             collections = [c.name for c in self.client.get_collections().collections]
             if self.collection_name in collections:
-                print(f"🗑️  Đang xóa collection cũ '{self.collection_name}'...")
+                logger.info(f"🗑️  Đang xóa collection cũ '{self.collection_name}'...")
                 self.client.delete_collection(self.collection_name)
-                print(f"✅ Đã xóa collection cũ.")
+                logger.info(f"✅ Đã xóa collection cũ.")
+            else:
+                logger.info(f"ℹ️ Collection '{self.collection_name}' chưa tồn tại, sẽ tạo mới.")
 
         # Bước 2: Lấy số chiều vector bằng cách embed thử 1 câu mẫu
-        print("📐 Đang xác định số chiều vector của model...")
+        logger.info("📐 Đang xác định số chiều vector của model...")
         sample_vector = self.embedder.embed_query("test")
         vector_size = len(sample_vector)
-        print(f"   → Model tạo ra vector {vector_size} chiều.")
+        logger.info(f"   → Model tạo ra vector {vector_size} chiều.")
 
         # Bước 3: Tạo collection mới thủ công qua self.client (đã có timeout=300s)
         self.client.create_collection(
             collection_name=self.collection_name,
             vectors_config=VectorParams(size=vector_size, distance=Distance.COSINE),
         )
-        print(f"🗄️  Đã tạo collection '{self.collection_name}' ({vector_size} chiều, COSINE).")
+        logger.info(f"🗄️  Đã tạo collection '{self.collection_name}' ({vector_size} chiều, COSINE).")
 
         # Bước 4: Dùng Qdrant() constructor với client đã có — KHÔNG tạo client mới
         vectorstore = Qdrant(
@@ -86,9 +97,9 @@ class VectorDBManager:
             batch = chunks[i : i + batch_size]
             vectorstore.add_documents(batch)
             current_progress = min(i + batch_size, total_chunks)
-            print(f"  ⏳ Tiến độ: {current_progress}/{total_chunks} chunks...")
+            logger.info(f"  ⏳ Tiến độ: {current_progress}/{total_chunks} chunks...")
             
-        print(f"✅ HOÀN TẤT! Toàn bộ {total_chunks} chunks đã nằm an toàn trong ổ cứng.")
+        logger.info(f"✅ HOÀN TẤT! Toàn bộ {total_chunks} chunks đã nằm an toàn trong ổ cứng.")
 
 # ==========================================
 # KHU VỰC CHẠY THỬ NGHIỆM TỔNG HỢP (PIPELINE END-TO-END)
@@ -118,4 +129,4 @@ if __name__ == "__main__":
         db_manager = VectorDBManager(config_path="config.yaml")
         
         # Bắt đầu nhồi toàn bộ dữ liệu (8000+ chunks) với mẻ 100 đoạn/lần
-        db_manager.build_database(all_chunks, batch_size=100)
+        db_manager.build_database(all_chunks, batch_size=100, force_recreate=True)

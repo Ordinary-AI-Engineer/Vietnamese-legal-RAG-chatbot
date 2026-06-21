@@ -1,8 +1,12 @@
 import os
 import glob
+import logging
 from typing import List
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_core.documents import Document
+
+logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"), format='%(message)s')
+logger = logging.getLogger(__name__)
 
 class PDFDocumentLoader:
     """
@@ -23,26 +27,26 @@ class PDFDocumentLoader:
         """
         # Kiểm tra xem thư mục có tồn tại không, nếu không thì báo lỗi rõ ràng
         if not os.path.exists(self.data_directory):
-            print(f"❌ Lỗi: Không tìm thấy thư mục '{self.data_directory}'")
-            print("👉 Hướng dẫn: Hãy tạo thư mục 'data/raw' ở gốc dự án và copy file PDF vào đó.")
+            logger.error(f"❌ Lỗi: Không tìm thấy thư mục '{self.data_directory}'")
+            logger.info("👉 Hướng dẫn: Hãy tạo thư mục 'data/raw' ở gốc dự án và copy file PDF vào đó.")
             return []
 
         # Tìm tất cả các file kết thúc bằng .pdf trong thư mục
         pdf_files = glob.glob(os.path.join(self.data_directory, "*.pdf"))
         
         if not pdf_files:
-            print(f"⚠️ Cảnh báo: Thư mục '{self.data_directory}' đang trống, không có file PDF nào.")
+            logger.warning(f"⚠️ Cảnh báo: Thư mục '{self.data_directory}' đang trống, không có file PDF nào.")
             return []
 
         all_documents = []
-        print(f"📂 Tìm thấy {len(pdf_files)} file PDF. Đang bắt đầu đọc...")
+        logger.info(f"📂 Tìm thấy {len(pdf_files)} file PDF. Đang bắt đầu đọc...")
 
         # Lặp qua từng file PDF để đọc
         for file_path in pdf_files:
             try:
                 # In ra tên file đang xử lý để dễ theo dõi (bỏ bớt đường dẫn dài)
                 file_name = os.path.basename(file_path)
-                print(f"  ⏳ Đang đọc file: {file_name}...")
+                logger.info(f"  ⏳ Đang đọc file: {file_name}...")
                 
                 # Gọi công cụ PyPDFLoader của LangChain để đọc file
                 loader = PyPDFLoader(file_path)
@@ -51,13 +55,13 @@ class PDFDocumentLoader:
                 docs = loader.load()
                 
                 all_documents.extend(docs)
-                print(f"  ✅ Đã đọc xong {len(docs)} trang từ {file_name}.")
+                logger.info(f"  ✅ Đã đọc xong {len(docs)} trang từ {file_name}.")
                 
             except Exception as e:
                 # Nếu file bị lỗi (hỏng, có pass bảo vệ), báo lỗi và tiếp tục file khác
-                print(f"  ❌ Lỗi khi đọc file {file_path}: {e}")
+                logger.error(f"  ❌ Lỗi khi đọc file {file_path}: {e}")
 
-        print(f"🎉 Hoàn tất! Tổng cộng đã thu hoạch được {len(all_documents)} trang tài liệu.")
+        logger.info(f"🎉 Hoàn tất! Tổng cộng đã thu hoạch được {len(all_documents)} trang tài liệu.")
         return all_documents
 
 # ==========================================

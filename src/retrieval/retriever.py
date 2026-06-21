@@ -1,6 +1,7 @@
 import yaml
 import os
 import re
+import logging
 from typing import List, Tuple
 from langchain_core.documents import Document
 from langchain_community.vectorstores import Qdrant
@@ -8,6 +9,9 @@ import qdrant_client
 
 from langchain_community.retrievers import BM25Retriever
 from langchain_community.llms import Ollama
+
+logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"), format='%(message)s')
+logger = logging.getLogger(__name__)
 
 def custom_bm25_preprocess(text: str) -> List[str]:
     """
@@ -49,15 +53,16 @@ def custom_bm25_preprocess(text: str) -> List[str]:
 # ==========================================
 LAW_SOURCE_MAP = [
     # (regex pattern, unique substring trong tên file)
-    (re.compile(r'bộ\s*luật\s*tố\s*tụng\s*hình\s*sự|bltths', re.I),  '5.3'),
-    (re.compile(r'bộ\s*luật\s*tố\s*tụng\s*dân\s*sự|blttds',  re.I),  '5.4'),
-    (re.compile(r'bộ\s*luật\s*hình\s*sự|blhs',               re.I),  '5.5'),
-    (re.compile(r'luật\s*sở\s*hữu\s*trí\s*tuệ|lshtt',          re.I),  '5.1'),
-    (re.compile(r'luật\s*cạnh\s*tranh',                        re.I),  '5.10'),
-    (re.compile(r'luật\s*thương\s*mại|ltm',                   re.I),  '5.11'),
+    (re.compile(r'luật\s*sở\s*hữu\s*trí\s*tuệ|lshtt', re.I), '5.1'),
+    (re.compile(r'bộ\s*luật\s*tố\s*tụng\s*hình\s*sự|bltths', re.I), '5.3'),
+    (re.compile(r'bộ\s*luật\s*tố\s*tụng\s*dân\s*sự|blttds', re.I), '5.4'),
+    (re.compile(r'sửa\s*đổi.*bộ\s*luật\s*hình\s*sự', re.I), '5.6'),
+    (re.compile(r'bộ\s*luật\s*hình\s*sự|blhs', re.I), '5.5'),
     (re.compile(r'luật\s*xử\s*lý\s*vi\s*phạm\s*hành\s*chính|lxlvphc', re.I), '5.7'),
-    (re.compile(r'luật\s*hải\s*quan',                          re.I),  '5.8'),
-    (re.compile(r'luật\s*khoa\s*học|luật\s*khcn',              re.I),  '5.9'),
+    (re.compile(r'luật\s*hải\s*quan|lhq', re.I), '5.8'),
+    (re.compile(r'luật\s*khoa\s*học|luật\s*khcn', re.I), '5.9'),
+    (re.compile(r'luật\s*cạnh\s*tranh|lct', re.I), '5.10'),
+    (re.compile(r'luật\s*thương\s*mại|ltm', re.I), '5.11'),
 ]
 
 def _detect_intent(query: str):
@@ -124,7 +129,7 @@ class LawRetriever:
         )
         
         self.qdrant_retriever = self.vector_store.as_retriever(search_kwargs={"k": self.candidate_pool})
-        print(f"🔌 Đã kết nối Qdrant (Vector Search).")
+        logger.info(f"🔌 Đã kết nối Qdrant (Vector Search).")
 
         self.bm25_retriever, self.parent_map = self._build_bm25_and_parent_map()
 
@@ -139,12 +144,12 @@ class LawRetriever:
         # Optional cross-encoder reranker
         self.reranker = reranker
         if reranker:
-            print(f"🎯 Cross-encoder Reranker đã được kích hoạt.")
+            logger.info(f"🎯 Cross-encoder Reranker đã được kích hoạt.")
         if self.multi_query_enabled:
-            print(f"🔀 Multi-Query Expansion: BẬT ({self.num_variants} variants)")
+            logger.info(f"🔀 Multi-Query Expansion: BẬT ({self.num_variants} variants)")
         if self.auto_merging_enabled:
-            print(f"🔗 Auto Merging Retriever: BẬT (threshold={self.merge_threshold} chunks/điều)")
-        print(f"🔎 Đã khởi động HỆ THỐNG HYBRID SEARCH (Tự động gộp điểm RRF).")
+            logger.info(f"🔗 Auto Merging Retriever: BẬT (threshold={self.merge_threshold} chunks/điều)")
+        logger.info(f"🔎 Đã khởi động HỆ THỐNG HYBRID SEARCH (Tự động gộp điểm RRF).")
 
     def _build_bm25_and_parent_map(self):
         """
@@ -152,14 +157,25 @@ class LawRetriever:
         - BM25Retriever (tìm kiếm từ khóa)
         - parent_map: {parent_id → Document} dùng cho Auto Merging
         """
-        print("⚙️ Đang tải corpus từ Qdrant (BM25 index + Parent Map)...")
+        logger.info("⚙️ Đang tải corpus từ Qdrant (BM25 index + Parent Map)...")
 
-        scroll_result, _ = self.client.scroll(
-            collection_name=self.collection_name,
-            limit=10000,
-            with_payload=True,
-            with_vectors=False
-        )
+        offset = None
+        all_records = []
+        while True:
+            records, offset = self.client.scroll(
+                collection_name=self.collection_name,
+                limit=1000,
+                offset=offset,
+                with_payload=True,
+                with_vectors=False
+            )
+            all_records.extend(records)
+            if offset is None:
+                break
+        
+        scroll_result = all_records
+        total_count = self.client.count(collection_name=self.collection_name).count
+        logger.info(f"   Đã tải {len(all_records)}/{total_count} records từ Qdrant.")
 
         bm25_docs  = []   # docs cho BM25 (enhanced content)
         parent_groups: dict = {}  # {parent_id: {chunks, metadata}}
@@ -197,8 +213,8 @@ class LawRetriever:
                 }
             parent_groups[parent_id]['chunks'].append(content)
 
-        print(f"   Đã nạp {len(bm25_docs)} chunks vào BM25.")
-        print(f"   Đã xây dựng {len(parent_groups)} parent nodes (điều luật).")
+        logger.info(f"   Đã nạp {len(bm25_docs)} chunks vào BM25.")
+        logger.info(f"   Đã xây dựng {len(parent_groups)} parent nodes (điều luật).")
 
         # Build BM25 retriever
         bm25_retriever = BM25Retriever.from_documents(
@@ -249,7 +265,7 @@ class LawRetriever:
                 result.append(parent_doc)
                 merged_pids.add(pid)
                 art_label = pid.split('|')[-1] or pid
-                print(f"   🔗 Auto Merge: {count} chunks → parent [{art_label[:50]}]")
+                logger.info(f"   🔗 Auto Merge: {count} chunks → parent [{art_label[:50]}]")
             else:
                 # Giữ nguyên chunks lẻ
                 result.extend(child_groups[pid])
@@ -257,7 +273,7 @@ class LawRetriever:
         result.extend(orphan_docs)
         merged_count = len(merged_pids)
         if merged_count:
-            print(f"   📦 Merged {merged_count} articles → context đầy đủ hơn")
+            logger.info(f"   📦 Merged {merged_count} articles → context đầy đủ hơn")
         return result
 
     def _expand_query(self, query: str) -> List[str]:
@@ -284,13 +300,13 @@ class LawRetriever:
                 if cleaned and len(cleaned) > 8 and cleaned.lower() != query.lower():
                     variants.append(cleaned)
             result = [query] + variants[:self.num_variants]
-            print(f"   🔀 Multi-Query: {len(result)} queries ({len(result)-1} variants)")
+            logger.info(f"   🔀 Multi-Query: {len(result)} queries ({len(result)-1} variants)")
             for i, q in enumerate(result):
                 label = 'ORIGINAL' if i == 0 else f'variant {i}'
-                print(f"      [{label}] {q}")
+                logger.info(f"      [{label}] {q}")
             return result
         except Exception as e:
-            print(f"   ⚠️ Multi-query expansion failed, using original only: {e}")
+            logger.warning(f"   ⚠️ Multi-query expansion failed, using original only: {e}")
             return [query]
 
     def _retrieve_single(self, query: str, source_prefix: str | None, article_number: str | None) -> Tuple[List[Document], List[Document], List[Document]]:
@@ -315,19 +331,19 @@ class LawRetriever:
             )
             try:
                 targeted_docs = targeted_retriever.invoke(query)
-                print(f"   📌 Targeted Search ({query[:30]}...): {len(targeted_docs)} chunks")
+                logger.info(f"   📌 Targeted Search ({query[:30]}...): {len(targeted_docs)} chunks")
             except Exception as e:
-                print(f"   ⚠️  Targeted Search thất bại: {e}")
+                logger.warning(f"   ⚠️  Targeted Search thất bại: {e}")
 
         return qdrant_docs, bm25_docs, targeted_docs
 
     def get_relevant_laws(self, query: str) -> List[Document]:
-        print(f"\n🧠 Đang phân tích câu hỏi: '{query}'...")
+        logger.info(f"\n🧠 Đang phân tích câu hỏi: '{query}'...")
 
         # Bước 0: Phát hiện ý định (tên luật + số điều)
         source_prefix, article_number = _detect_intent(query)
         if source_prefix:
-            print(f"   🎯 Đã phát hiện: file prefix='{source_prefix}', điều='{article_number}'")
+            logger.info(f"   🎯 Đã phát hiện: file prefix='{source_prefix}', điều='{article_number}'")
 
         # Bước 1: Multi-Query Expansion (nếu bật)
         queries = self._expand_query(query) if self.multi_query_enabled else [query]
@@ -390,14 +406,14 @@ class LawRetriever:
 
         # Bước 3: Xếp hạng theo tổng điểm RRF
         sorted_doc_ids = sorted(rrf_scores.keys(), key=lambda x: rrf_scores[x], reverse=True)
-        print(f"   📊 RRF pool: {len(sorted_doc_ids)} unique docs từ {len(queries)} queries")
+        logger.info(f"   📊 RRF pool: {len(sorted_doc_ids)} unique docs từ {len(queries)} queries")
 
         # Bước 4: Cross-encoder Reranking (nếu có)
         if self.reranker:
             rrf_pool = [doc_map[doc_id] for doc_id in sorted_doc_ids[:20]]
             reranked = self.reranker.rerank(query, rrf_pool)
             if reranked:
-                print(f"   ✨ Reranked: {len(rrf_pool)} → Top {len(reranked)}")
+                logger.info(f"   ✨ Reranked: {len(rrf_pool)} → Top {len(reranked)}")
             final = reranked or rrf_pool
         else:
             final = [doc_map[doc_id] for doc_id in sorted_doc_ids[:self.top_k]]
@@ -433,4 +449,25 @@ if __name__ == "__main__":
         print(f"👉 Vị trí: {chapter} | {article}")
         print("-" * 30)
         print(doc.page_content)
-        print("=" * 60)
+    # ==========================================
+    # TEST: KIỂM TRA NHẬN DIỆN LUẬT (INTENT DETECTION)
+    # ==========================================
+    print("\n" + "="*60)
+    print("🔍 TEST: NHẬN DIỆN LUẬT TỪ CÂU HỎI (INTENT DETECTION)")
+    print("="*60)
+    test_queries = [
+        "Luật sở hữu trí tuệ quy định thế nào về bản quyền?",
+        "Điều 12 bộ luật tố tụng hình sự",
+        "Bộ luật tố tụng dân sự có quy định gì về hòa giải?",
+        "blhs 2015 quy định mức phạt nào cho tội lừa đảo?",
+        "Luật sửa đổi bổ sung bộ luật hình sự số 100",
+        "Luật xử lý vi phạm hành chính (lxlvphc) phạt lỗi vượt đèn đỏ bao nhiêu?",
+        "Quy định của luật hải quan về khai báo hải quan?",
+        "Luật khoa học và công nghệ có chính sách gì cho sinh viên?",
+        "Thế nào là cạnh tranh không lành mạnh theo luật cạnh tranh?",
+        "Luật thương mại quy định về hợp đồng mua bán hàng hóa?",
+    ]
+    for q in test_queries:
+        prefix, article = _detect_intent(q)
+        print(f"Câu hỏi: '{q}'")
+        print(f"   → Prefix: {prefix} | Article: {article}\n")

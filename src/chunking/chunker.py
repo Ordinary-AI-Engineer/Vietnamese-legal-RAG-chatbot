@@ -1,9 +1,13 @@
 import yaml
 import os
 import re
+import logging
 from typing import List
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"), format='%(message)s')
+logger = logging.getLogger(__name__)
 
 class DocumentChunker:
     """
@@ -40,13 +44,13 @@ class DocumentChunker:
             ],
             is_separator_regex=True
         )
-        print(f"⚙️  Đã thiết lập dao cắt THÔNG MINH: {chunk_size} ký tự/đoạn.")
+        logger.info(f"⚙️  Đã thiết lập dao cắt THÔNG MINH: {chunk_size} ký tự/đoạn.")
 
     def _enrich_metadata(self, chunks: List[Document]) -> List[Document]:
         """
         LEVEL 3: Thuật toán quét và bơm ngữ cảnh pháp lý.
         """
-        print("💉 Đang tiến hành bơm ngữ cảnh (Chương, Điều) vào các đoạn cắt...")
+        logger.info("💉 Đang tiến hành bơm ngữ cảnh (Chương, Điều) vào các đoạn cắt...")
         current_chapter = "Chưa xác định Chương"
         current_article = "Chưa xác định Điều"
 
@@ -82,7 +86,7 @@ class DocumentChunker:
         """
         Quy trình xử lý hoàn chỉnh: Cắt -> Bơm ngữ cảnh
         """
-        print(f"🔪 Đang băm nhỏ {len(documents)} trang tài liệu. Vui lòng đợi...")
+        logger.info(f"🔪 Đang băm nhỏ {len(documents)} trang tài liệu. Vui lòng đợi...")
         
         # Bước 1: Cắt nhỏ
         raw_chunks = self.splitter.split_documents(documents)
@@ -90,7 +94,7 @@ class DocumentChunker:
         # Bước 2: Bơm ngữ cảnh (Level 3)
         enriched_chunks = self._enrich_metadata(raw_chunks)
         
-        print(f"✅ Hoàn tất! Từ {len(documents)} trang, đã tạo ra {len(enriched_chunks)} đoạn thông minh.")
+        logger.info(f"✅ Hoàn tất! Từ {len(documents)} trang, đã tạo ra {len(enriched_chunks)} đoạn thông minh.")
         return enriched_chunks
 
 # ==========================================

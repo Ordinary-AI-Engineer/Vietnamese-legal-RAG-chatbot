@@ -8,113 +8,113 @@
   "summary": {
     "MRR@10": 0.6667,
     "Recall@5": 0.7333,
-    "Precision@5": 0.3733
+    "Precision@5": 0.3078
   },
   "per_question": [
     {
       "question": "Điều 198 Bộ luật hình sự quy định tội gì?",
       "mrr": 1.0,
       "recall_k5": 1.0,
-      "precision_k5": 0.4,
-      "latency_s": 2.7193219661712646
+      "precision_k5": 0.25,
+      "latency_s": 2.535773992538452
     },
     {
       "question": "Tội lừa dối khách hàng bị phạt tù tối đa bao nhiêu năm?",
       "mrr": 0.5,
       "recall_k5": 1.0,
-      "precision_k5": 0.4,
-      "latency_s": 1.6350562572479248
+      "precision_k5": 0.3333333333333333,
+      "latency_s": 1.7696380615234375
     },
     {
       "question": "Điều 192 Bộ luật hình sự quy định về tội gì?",
       "mrr": 1.0,
       "recall_k5": 1.0,
-      "precision_k5": 0.8,
-      "latency_s": 1.2576279640197754
+      "precision_k5": 0.5,
+      "latency_s": 5.074318885803223
     },
     {
       "question": "Quyền tự bảo vệ trong Luật Sở hữu trí tuệ được quy định tại điều nào?",
       "mrr": 0.0,
       "recall_k5": 0.0,
       "precision_k5": 0.0,
-      "latency_s": 1.5399670600891113
+      "latency_s": 3.149714946746826
     },
     {
       "question": "Những người không được tham gia đấu giá theo Luật Thương mại gồm những ai?",
       "mrr": 1.0,
       "recall_k5": 1.0,
-      "precision_k5": 0.4,
-      "latency_s": 1.362684965133667
+      "precision_k5": 0.25,
+      "latency_s": 1.2873449325561523
     },
     {
       "question": "Điều 200 Bộ luật hình sự quy định về tội trốn thuế như thế nào?",
       "mrr": 1.0,
       "recall_k5": 1.0,
       "precision_k5": 1.0,
-      "latency_s": 1.4139461517333984
+      "latency_s": 1.456827163696289
     },
     {
       "question": "Tập trung kinh tế bị cấm được quy định trong Luật Cạnh tranh như thế nào?",
       "mrr": 1.0,
       "recall_k5": 1.0,
-      "precision_k5": 0.2,
-      "latency_s": 2.3798489570617676
+      "precision_k5": 0.25,
+      "latency_s": 2.383807897567749
     },
     {
       "question": "Biên bản vi phạm hành chính cần có những nội dung gì?",
       "mrr": 0.5,
       "recall_k5": 1.0,
-      "precision_k5": 0.6,
-      "latency_s": 1.2202048301696777
+      "precision_k5": 0.3333333333333333,
+      "latency_s": 1.1850228309631348
     },
     {
       "question": "Thủ tục hòa giải trong Bộ luật tố tụng dân sự được quy định thế nào?",
       "mrr": 0.0,
       "recall_k5": 0.0,
       "precision_k5": 0.0,
-      "latency_s": 1.4050061702728271
+      "latency_s": 2.9218170642852783
     },
     {
       "question": "Điều 74 Bộ luật hình sự quy định gì về pháp nhân thương mại?",
       "mrr": 1.0,
       "recall_k5": 1.0,
-      "precision_k5": 0.2,
-      "latency_s": 1.2630388736724854
+      "precision_k5": 0.25,
+      "latency_s": 2.5690410137176514
     },
     {
       "question": "Người dưới 18 tuổi phạm tội được xử lý như thế nào theo Bộ luật tố tụng hình sự?",
       "mrr": 0.0,
       "recall_k5": 0.0,
       "precision_k5": 0.0,
-      "latency_s": 1.5090248584747314
+      "latency_s": 1.6006600856781006
     },
     {
       "question": "Luật Hải quan quy định gì về kiểm tra hải quan?",
       "mrr": 1.0,
       "recall_k5": 1.0,
       "precision_k5": 1.0,
-      "latency_s": 1.2886202335357666
+      "latency_s": 2.493134021759033
     },
     {
       "question": "Điều 90 Bộ luật hình sự quy định về đối tượng nào?",
       "mrr": 1.0,
       "recall_k5": 1.0,
       "precision_k5": 0.2,
-      "latency_s": 2.2912189960479736
+      "latency_s": 1.3453998565673828
     },
     {
       "question": "Xóa án tích đối với người dưới 18 tuổi theo Bộ luật tố tụng hình sự?",
       "mrr": 0.0,
       "recall_k5": 0.0,
       "precision_k5": 0.0,
-      "latency_s": 1.4502737522125244
+      "latency_s": 2.494990110397339
     },
     {
       "question": "Quyết định xử phạt vi phạm hành chính phải có những nội dung bắt buộc nào?",
       "mrr": 1.0,
       "recall_k5": 1.0,
-      "precision_k5": 0.4,
-      "latency_s": 1.1983869075775146
+      "precision_k5": 0.25,
+      "latency_s": 1.1437032222747803
     }
   ]
 }

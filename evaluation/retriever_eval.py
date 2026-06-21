@@ -112,7 +112,13 @@ def run_retriever_eval(
     reranker = None
     if use_reranker:
         from src.retrieval.reranker import CrossEncoderReranker
-        reranker = CrossEncoderReranker(model_name="BAAI/bge-reranker-base", top_k=5)
+        import yaml
+        with open(config_path, 'r', encoding='utf-8') as f:
+            cfg = yaml.safe_load(f)
+        r_cfg = cfg.get('reranker', {})
+        model_name = r_cfg.get('model_name', "BAAI/bge-reranker-v2-m3")
+        top_k = r_cfg.get('top_k', 5)
+        reranker = CrossEncoderReranker(model_name=model_name, top_k=top_k)
 
     retriever = LawRetriever(config_path=config_path, reranker=reranker)
 
