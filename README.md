@@ -288,8 +288,8 @@ vector_db:
 **Low Recall in evaluation**
 → Root cause: macOS filesystem stores paths in NFD Unicode form while JSON ground-truth uses NFC. The metric script normalizes both with `unicodedata.normalize("NFC", s)`. Without this fix, string matching silently fails even for visually identical strings.
 
-**Reranker degrades retrieval quality**
-→ Expected behavior: `BAAI/bge-reranker-base` is not optimized for Vietnamese. The reranker is disabled by default (`reranker = None` in `llm_client.py`). To enable it, uncomment the `CrossEncoderReranker` block.
+**Reranker config not applied during evaluation**
+→ The system now correctly loads `BAAI/bge-reranker-v2-m3` dynamically from `config.yaml` during evaluation. This ensures consistency between the production API and the CI evaluation scripts.
 
 ---
 
@@ -301,9 +301,9 @@ vector_db:
 | Embeddings | `intfloat/multilingual-e5-large` via fastembed |
 | Vector DB | Qdrant |
 | BM25 | `rank_bm25` |
-| Reranker | `BAAI/bge-reranker-base` via sentence-transformers |
+| Reranker | `BAAI/bge-reranker-v2-m3` via sentence-transformers |
 | API | FastAPI + Uvicorn |
-| Frontend | Pure HTML/CSS/JS (no framework) |
+| Frontend | Next.js 16 & Premium Glassmorphism HTML Fallback |
 | Orchestration | LangChain (LCEL) |
 
 ---
